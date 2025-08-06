@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Complete the Word Game</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <h1>🎮 Complete the Word Game</h1>
+    <div id="setup">
+        <label>Enter player names (comma-separated):</label><br>
+        <input type="text" id="playersInput">
+        <button onclick="startGame()">Start Game</button>
+    </div>
+
+    <div id="game" style="display:none;">
+        <p id="turnInfo"></p>
+        <p id="wordDisplay">Current Word: <span id="word"></span></p>
+        <button onclick="startListening()">🎤 Speak Letter</button>
+        <p id="status"></p>
+        <p id="eliminated"></p>
+    </div>
+
+    <script>
+        let players = [];
+        let eliminated = [];
+        let currentIndex = 0;
+        let word = "";
+
+        function startGame() {
+            const input = document.getElementById("playersInput").value;
+            players = input.split(",").map(p => p.trim()).filter(p => p);
+            if (players.length < 2) {
+                alert("Enter at least 2 players.");
+                return;
+            }
+            document.getElementById("setup").style.display = "none";
+            document.getElementById("game").style.display = "block";
+            updateTurn();
+        }
+
+        function updateTurn() {
+            while (eliminated.includes(players[currentIndex])) {
+                currentIndex = (currentIndex + 1) % players.length;
+            }
+            document.getElementById("turnInfo").innerText = `${players[currentIndex]}'s turn`;
+        }
+
+        function startListening() {
+            document.getElementById("status").innerText = "Listening...";
+            const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+            recognition.lang = 'en-US';
+            recognition.interimResults = false;
+            recognition.maxAlternatives = 1;
+
+            let timeout = setTimeout(() => {
+                recognition.abort();
+                eliminateCurrent("⏰ Timeout!");
+            }, 10000);
+
+            recognition.onresult = (event) => {
+                clearTimeout(timeout);
+                const letter = event.results[0][0].transcript.toLowerCase();
+                if (letter.length === 1 && /[a-z]/.test(letter)) {
+                    word += letter;
+                    document.getElementById("word").innerText = word;
+                    validateWord(word);
+                } else {
+                    eliminateCurrent("❌ Invalid input.");
+                }
+            };
+
+            recognition.onerror = () => {
+                clearTimeout(timeout);
+                eliminateCurrent("🤷 Could not understand.");
+            };
+
+            recognition.start();
+        }
+
+        function validateWord(currentWord) {
+            fetch('/validate_word', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({word: currentWord})
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (!data.valid) {
+                    eliminateCurrent(`❌ '${word}' is not a valid word.`);
+                } else {
+                    document.getElementById("status").innerText = `✅ '${word}' is valid.`;
+                    nextTurn();
+                }
+            });
+        }
+
+        function eliminateCurrent(reason) {
+            const player = players[currentIndex];
+            eliminated.push(player);
+            document.getElementById("eliminated").innerText += `${player} eliminated! ${reason}\n`;
+            const remaining = players.filter(p => !eliminated.includes(p));
+            if (remaining.length === 1) {
+                document.getElementById("status").innerText = `🏆 Winner: ${remaining[0]}`;
+                document.getElementById("turnInfo").innerText = "";
+            } else {
+                nextTurn();
+            }
+        }
+
+        function nextTurn() {
+            currentIndex = (currentIndex + 1) % players.length;
+            updateTurn();
+        }
+    </script>
+</body>
+</html>
